@@ -29,7 +29,10 @@ const attendanceList = asyncHandler(async (req, res) => {
     const sections = await Section.find({ faculty: req.user.id }).distinct('_id');
     filter.section = { $in: sections };
   }
-  if (req.query.section) filter.section = req.query.section;
+  if (req.query.section) {
+    if (req.user.role === 'faculty' && !filter.section.$in.some((id) => String(id) === req.query.section)) return res.status(403).json({ success: false, error: { message: 'Section is not assigned to you' } });
+    filter.section = req.query.section;
+  }
   if (req.query.student && req.user.role !== 'student') filter.student = req.query.student;
   if (req.query.date) {
     const start = new Date(req.query.date); start.setUTCHours(0, 0, 0, 0);

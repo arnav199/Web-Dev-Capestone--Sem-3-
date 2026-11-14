@@ -1,0 +1,124 @@
+{
+  "info": {
+    "_postman_id": "c7bd15dc-888f-4e59-9bc4-5d9b414ebf16",
+    "name": "Campus Management API",
+    "description": "Manual API coverage: positive requests, validation, missing resource, unauthorized/forbidden access, duplicate enrollment and student attendance privacy.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000" },
+    { "key": "accessToken", "value": "" },
+    { "key": "adminToken", "value": "" },
+    { "key": "facultyToken", "value": "" },
+    { "key": "studentToken", "value": "" },
+    { "key": "sectionId", "value": "" },
+    { "key": "studentId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Health and Authentication",
+      "item": [
+        {
+          "name": "Health check (success)",
+          "request": { "method": "GET", "url": "{{baseUrl}}/health" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('API is healthy', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Login as seeded admin",
+          "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\"email\":\"admin@campus.test\",\"password\":\"CampusDemo123!\"}" }, "url": "{{baseUrl}}/api/auth/login" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Login succeeds', () => pm.response.to.have.status(200));", "const data = pm.response.json().data;", "pm.collectionVariables.set('adminToken', data.accessToken);", "pm.collectionVariables.set('accessToken', data.accessToken);"] } }]
+        },
+        {
+          "name": "Login as seeded faculty",
+          "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\"email\":\"faculty@campus.test\",\"password\":\"CampusDemo123!\"}" }, "url": "{{baseUrl}}/api/auth/login" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Login succeeds', () => pm.response.to.have.status(200));", "pm.collectionVariables.set('facultyToken', pm.response.json().data.accessToken);"] } }]
+        },
+        {
+          "name": "Login as seeded student",
+          "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\"email\":\"student1@campus.test\",\"password\":\"CampusDemo123!\"}" }, "url": "{{baseUrl}}/api/auth/login" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Login succeeds', () => pm.response.to.have.status(200));", "pm.collectionVariables.set('studentToken', pm.response.json().data.accessToken);", "pm.collectionVariables.set('studentUserId', pm.response.json().data.user.id);"] } }]
+        },
+        {
+          "name": "Login validation failure",
+          "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\"email\":\"bad\",\"password\":\"\"}" }, "url": "{{baseUrl}}/api/auth/login" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Invalid input is rejected', () => pm.response.to.have.status(400));"] } }]
+        },
+        {
+          "name": "Protected profile without token (unauthorized)",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/auth/me" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Missing token is rejected', () => pm.response.to.have.status(401));"] } }]
+        }
+      ]
+    },
+    {
+      "name": "Courses and Sections",
+      "item": [
+        {
+          "name": "List courses (success)",
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{studentToken}}" }], "url": "{{baseUrl}}/api/courses?page=1&limit=20" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Course list loads', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Get missing course (not found)",
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }], "url": "{{baseUrl}}/api/courses/000000000000000000000000" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Unknown resource is 404', () => pm.response.to.have.status(404));"] } }]
+        },
+        {
+          "name": "List sections and save seeded section ID",
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }], "url": "{{baseUrl}}/api/sections" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Sections load', () => pm.response.to.have.status(200));", "const section = pm.response.json().data.find(x => x.name === 'A' && x.term === 'Fall 2026');", "if (section) pm.collectionVariables.set('sectionId', section._id);"] } }]
+        },
+        {
+          "name": "Student forbidden from admin user list",
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{studentToken}}" }], "url": "{{baseUrl}}/api/users" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Insufficient role is 403', () => pm.response.to.have.status(403));"] } }]
+        }
+      ]
+    },
+    {
+      "name": "Enrollment and Attendance",
+      "item": [
+        {
+          "name": "Student enrolls in section (success or already enrolled)",
+          "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{studentToken}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\"section\":\"{{sectionId}}\"}" }, "url": "{{baseUrl}}/api/enrollments" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Created or duplicate conflict', () => pm.expect([201, 409]).to.include(pm.response.code));"] } }]
+        },
+        {
+          "name": "Duplicate enrollment conflict (repeat previous request)",
+          "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{studentToken}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\"section\":\"{{sectionId}}\"}" }, "url": "{{baseUrl}}/api/enrollments" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Duplicate enrollment is 409', () => pm.response.to.have.status(409));"] } }]
+        },
+        {
+          "name": "Student attendance summary (success)",
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{studentToken}}" }], "url": "{{baseUrl}}/api/attendance/summary" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Attendance summary loads', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Student attendance history is private to own account",
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{studentToken}}" }], "url": "{{baseUrl}}/api/attendance?student=000000000000000000000001" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Student receives only own scoped records', () => pm.response.to.have.status(200));", "pm.response.json().data.forEach(row => pm.expect(row.student._id).to.eql(pm.collectionVariables.get('studentUserId')));"] } }]
+        },
+        {
+          "name": "Low-attendance report (role protected)",
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{facultyToken}}" }], "url": "{{baseUrl}}/api/reports/low-attendance?threshold=75" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Faculty can read report', () => pm.response.to.have.status(200));"] } }]
+        }
+      ]
+    },
+    {
+      "name": "Announcements and Reports",
+      "item": [
+        {
+          "name": "List relevant announcements (success)",
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{studentToken}}" }], "url": "{{baseUrl}}/api/announcements" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Announcements load', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Enrollment analytics (success)",
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }], "url": "{{baseUrl}}/api/reports/enrollments" },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('Enrollment report loads', () => pm.response.to.have.status(200));"] } }]
+        }
+      ]
+    }
+  ]
+}
